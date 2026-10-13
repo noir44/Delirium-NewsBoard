@@ -1,6 +1,7 @@
 {
     "IGUI_DelNews_Button": "News",
     "IGUI_DelNews_Close": "Close",
+    "IGUI_DelNews_ButtonTip": "News <LINE> <RGB:0.7,0.7,0.7> Drag to move, right click to put it back under the sidebar",
     "IGUI_DelNews_Updated": "News updated",
     "IGUI_DelNews_Empty": "No news yet.",
     "IGUI_DelNews_BadMarkup": "This tab could not be shown: error in the news markup.",

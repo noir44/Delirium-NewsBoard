@@ -258,13 +258,46 @@ end
 
 ---- button -------------------------------------------------------------------
 
--- Round envelope icon right under the vanilla left sidebar (ISEquippedItem).
+-- Round envelope icon. By default right under the vanilla left sidebar
+-- (ISEquippedItem); players can drag it anywhere (it can end up behind the
+-- chat on some layouts), right click puts it back.
 -- Not a child of the sidebar: vanilla rebuilds it (resolution, sidebar size
 -- option, respawn) and its shrinkWrap() would pick our button up as its own.
--- Instead the position is taken from the live sidebar every frame.
+-- Always on top: an ordinary element sits under the chat window as soon as the
+-- chat is brought to front, and every click then goes to the chat instead.
 DelNewsButton = ISButton:derive("DelNewsButton")
 
 local SIDEBAR_GAP = 15   -- vanilla UI_BORDER_SPACING + 5 between sidebar icons
+local DRAG_THRESHOLD = 6
+local POS_FILE = "DelNews_button.txt"   -- client Zomboid/Lua, per player machine
+
+local customPos = nil    -- { x, y } once dragged, nil = follow the sidebar
+
+local function loadPos()
+	local r = getFileReader(POS_FILE, false)
+	if not r then return end
+	local line = r:readLine()
+	r:close()
+	local x, y = string.match(line or "", "^(%-?%d+),(%-?%d+)$")
+	if x then customPos = { x = tonumber(x), y = tonumber(y) } end
+end
+
+local function savePos()
+	local w = getFileWriter(POS_FILE, true, false)
+	if not w then return end
+	if customPos then
+		w:write(string.format("%d,%d", customPos.x, customPos.y))
+	else
+		w:write("auto")
+	end
+	w:close()
+end
+
+local function clampToScreen(x, y, size)
+	x = math.max(0, math.min(x, getCore():getScreenWidth() - size))
+	y = math.max(0, math.min(y, getCore():getScreenHeight() - size))
+	return math.floor(x), math.floor(y)
+end
 
 function DelNewsButton:prerender()
 	local doc = DelNewsClient.doc
@@ -272,27 +305,93 @@ function DelNewsButton:prerender()
 	if doc and doc.unread and math.floor(getTimestampMs() / 500) % 2 == 0 then
 		tex = self.texUnread
 	end
-	local a = self:isMouseOver() and 1 or 0.85
+	local a = (self:isMouseOver() or self.dragging) and 1 or 0.85
 	self:drawTextureScaled(tex, 0, 0, self.width, self.height, a, 1, 1, 1)
 end
 
 function DelNewsButton:render()
 end
 
+function DelNewsButton:onMouseDown(x, y)
+	self.dragStart = { mx = getMouseX(), my = getMouseY(), x = self:getAbsoluteX(), y = self:getAbsoluteY() }
+	self.dragging = false
+	return ISButton.onMouseDown(self, x, y)
+end
+
+local function dragMove(self)
+	local s = self.dragStart
+	if not s or not self.pressed then return end
+	local dx, dy = getMouseX() - s.mx, getMouseY() - s.my
+	if not self.dragging and math.abs(dx) + math.abs(dy) >= DRAG_THRESHOLD then
+		self.dragging = true
+	end
+	if self.dragging then
+		local x, y = clampToScreen(s.x + dx, s.y + dy, self.width)
+		customPos = { x = x, y = y }
+		self:setX(x)
+		self:setY(y)
+	end
+end
+
+function DelNewsButton:onMouseMove(dx, dy)
+	ISButton.onMouseMove(self, dx, dy)
+	dragMove(self)
+end
+
+-- A fast drag leaves the button's rectangle; keep following the mouse.
+function DelNewsButton:onMouseMoveOutside(dx, dy)
+	ISButton.onMouseMoveOutside(self, dx, dy)
+	dragMove(self)
+end
+
+local function endDrag(self)
+	local dragged = self.dragging
+	self.dragStart = nil
+	self.dragging = false
+	if dragged then savePos() end
+	return dragged
+end
+
+function DelNewsButton:onMouseUp(x, y)
+	if endDrag(self) then
+		self.pressed = false   -- a drag is not a click
+		return
+	end
+	ISButton.onMouseUp(self, x, y)
+end
+
+function DelNewsButton:onMouseUpOutside(x, y)
+	endDrag(self)
+	ISButton.onMouseUpOutside(self, x, y)
+end
+
+function DelNewsButton:onRightMouseUp(x, y)
+	customPos = nil
+	savePos()
+	return true
+end
+
 local function placeButton()
 	local b = UI.button
-	if not b then return end
+	if not b or b.dragging then return end
 	local bar = ISEquippedItem and ISEquippedItem.instance
-	if not bar or not bar:getIsVisible() then
+	-- Vanilla icons are TEXTURE_WIDTH wide and 0.75 of that high.
+	local size = 36
+	if bar and bar:getWidth() >= 16 then size = math.floor(bar:getWidth() * 0.75) end
+	if b.width ~= size then b:setWidth(size); b:setHeight(size) end
+
+	local x, y
+	if customPos then
+		x, y = clampToScreen(customPos.x, customPos.y, size)
+	elseif bar and bar:getIsVisible() then
+		x = bar:getAbsoluteX() + (bar:getWidth() - size) / 2
+		y = bar:getAbsoluteY() + bar:getHeight() + SIDEBAR_GAP
+	else
 		if b:getIsVisible() then b:setVisible(false) end
 		return
 	end
-	-- Vanilla icons are TEXTURE_WIDTH wide and 0.75 of that high.
-	local size = math.floor(bar:getWidth() * 0.75)
-	if size < 16 then size = 36 end
-	if b.width ~= size then b:setWidth(size); b:setHeight(size) end
-	b:setX(bar:getAbsoluteX() + (bar:getWidth() - size) / 2)
-	b:setY(bar:getAbsoluteY() + bar:getHeight() + SIDEBAR_GAP)
+	b:setX(x)
+	b:setY(y)
 	if not b:getIsVisible() then b:setVisible(true) end
 end
 
@@ -305,13 +404,15 @@ local function ensureUI()
 		UI.panel:resizeToScreen()
 	end
 	if not UI.button then
+		loadPos()
 		UI.button = DelNewsButton:new(0, 0, 36, 36, "", nil, function() UI.toggle() end)
 		UI.button.texNormal = getTexture("media/ui/DelNews_Btn.png")
 		UI.button.texUnread = getTexture("media/ui/DelNews_BtnNew.png")
 		UI.button:initialise()
 		UI.button:setDisplayBackground(false)
-		UI.button:setTooltip(getText("IGUI_DelNews_Button"))
+		UI.button:setTooltip(getText("IGUI_DelNews_ButtonTip"))
 		UI.button:addToUIManager()
+		UI.button:setAlwaysOnTop(true)   -- needs the java object, so after addToUIManager
 		placeButton()
 	end
 end

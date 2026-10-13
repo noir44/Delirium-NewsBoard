@@ -1,6 +1,7 @@
 {
     "IGUI_DelNews_Button": "Новости",
     "IGUI_DelNews_Close": "Закрыть",
+    "IGUI_DelNews_ButtonTip": "Новости <LINE> <RGB:0.7,0.7,0.7> Перетащите, чтобы переместить; правый клик — вернуть под левую панель",
     "IGUI_DelNews_Updated": "Новости обновлены",
     "IGUI_DelNews_Empty": "Новостей пока нет.",
     "IGUI_DelNews_BadMarkup": "Не удалось показать вкладку: ошибка в разметке новостей.",
