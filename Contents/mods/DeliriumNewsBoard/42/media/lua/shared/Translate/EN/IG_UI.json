@@ -1,0 +1,9 @@
+{
+    "IGUI_DelNews_Button": "News",
+    "IGUI_DelNews_Close": "Close",
+    "IGUI_DelNews_Updated": "News updated",
+    "IGUI_DelNews_Empty": "No news yet.",
+    "IGUI_DelNews_ImageLoading": "[loading picture %1...]",
+    "IGUI_DelNews_ImageMissing": "[picture not found: %1]",
+    "IGUI_DelNews_ImageFailed": "[picture could not be shown: %1]"
+}

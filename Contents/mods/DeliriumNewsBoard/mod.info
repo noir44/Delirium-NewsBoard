@@ -1,0 +1,6 @@
+name=Delirium News Board
+id=DelNewsBoard
+description=In-game news board for the Delirium server. Text and pictures are edited on the server while it runs - no mod update, no extra mods, no Java patches.
+poster=poster.png
+author=noir4
+versionMin=42.13
