@@ -258,22 +258,42 @@ end
 
 ---- button -------------------------------------------------------------------
 
+-- Round envelope icon right under the vanilla left sidebar (ISEquippedItem).
+-- Not a child of the sidebar: vanilla rebuilds it (resolution, sidebar size
+-- option, respawn) and its shrinkWrap() would pick our button up as its own.
+-- Instead the position is taken from the live sidebar every frame.
 DelNewsButton = ISButton:derive("DelNewsButton")
+
+local SIDEBAR_GAP = 15   -- vanilla UI_BORDER_SPACING + 5 between sidebar icons
 
 function DelNewsButton:prerender()
 	local doc = DelNewsClient.doc
+	local tex = self.texNormal
 	if doc and doc.unread and math.floor(getTimestampMs() / 500) % 2 == 0 then
-		self.backgroundColor = { r = 0.75, g = 0.45, b = 0.05, a = 0.9 }
-	else
-		self.backgroundColor = { r = 0, g = 0, b = 0, a = 0.6 }
+		tex = self.texUnread
 	end
-	ISButton.prerender(self)
+	local a = self:isMouseOver() and 1 or 0.85
+	self:drawTextureScaled(tex, 0, 0, self.width, self.height, a, 1, 1, 1)
+end
+
+function DelNewsButton:render()
 end
 
 local function placeButton()
-	if not UI.button then return end
-	UI.button:setX(getCore():getScreenWidth() - UI.button.width - 120)
-	UI.button:setY(getCore():getScreenHeight() - UI.button.height - 70)
+	local b = UI.button
+	if not b then return end
+	local bar = ISEquippedItem and ISEquippedItem.instance
+	if not bar or not bar:getIsVisible() then
+		if b:getIsVisible() then b:setVisible(false) end
+		return
+	end
+	-- Vanilla icons are TEXTURE_WIDTH wide and 0.75 of that high.
+	local size = math.floor(bar:getWidth() * 0.75)
+	if size < 16 then size = 36 end
+	if b.width ~= size then b:setWidth(size); b:setHeight(size) end
+	b:setX(bar:getAbsoluteX() + (bar:getWidth() - size) / 2)
+	b:setY(bar:getAbsoluteY() + bar:getHeight() + SIDEBAR_GAP)
+	if not b:getIsVisible() then b:setVisible(true) end
 end
 
 local function ensureUI()
@@ -285,12 +305,13 @@ local function ensureUI()
 		UI.panel:resizeToScreen()
 	end
 	if not UI.button then
-		local title = getText("IGUI_DelNews_Button")
-		local w = getTextManager():MeasureStringX(UIFont.Small, title) + 24
-		UI.button = DelNewsButton:new(0, 0, w, fontHgt(UIFont.Small) + 10, title, nil, function() UI.toggle() end)
+		UI.button = DelNewsButton:new(0, 0, 36, 36, "", nil, function() UI.toggle() end)
+		UI.button.texNormal = getTexture("media/ui/DelNews_Btn.png")
+		UI.button.texUnread = getTexture("media/ui/DelNews_BtnNew.png")
 		UI.button:initialise()
+		UI.button:setDisplayBackground(false)
+		UI.button:setTooltip(getText("IGUI_DelNews_Button"))
 		UI.button:addToUIManager()
-		UI.button:setVisible(true)
 		placeButton()
 	end
 end
@@ -329,6 +350,8 @@ end
 function UI.onImageChanged(name)
 	if UI.panel and UI.panel:getIsVisible() then UI.panel:showTab(false) end
 end
+
+Events.OnPreUIDraw.Add(placeButton)
 
 Events.OnResolutionChange.Add(function()
 	placeButton()
