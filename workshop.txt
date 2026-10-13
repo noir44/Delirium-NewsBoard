@@ -1,0 +1,6 @@
+version=1
+id=
+title=Delirium News Board
+description=In-game news board for the Delirium server: tabs, formatted text and pictures, edited on the server while it runs - no mod update, no extra mods, no Java patches. Build 42.
+tags=Build 42
+visibility=private
