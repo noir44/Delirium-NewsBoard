@@ -3,6 +3,7 @@
     "IGUI_DelNews_Close": "Закрити",
     "IGUI_DelNews_Updated": "Новини оновлено",
     "IGUI_DelNews_Empty": "Новин поки немає.",
+    "IGUI_DelNews_BadMarkup": "Не вдалося показати вкладку: помилка в розмітці новин.",
     "IGUI_DelNews_ImageLoading": "[завантажується картинка %1...]",
     "IGUI_DelNews_ImageMissing": "[картинку не знайдено: %1]",
     "IGUI_DelNews_ImageFailed": "[не вдалося показати картинку: %1]"

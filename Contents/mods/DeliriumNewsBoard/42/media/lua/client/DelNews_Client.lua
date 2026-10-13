@@ -66,20 +66,52 @@ local function isCached(key)
 	return false
 end
 
+-- "name.png" or "name.png,w,h" -> name, w, h (w/h nil when not given).
+function C.parseImageSpec(spec)
+	local name, w, h = string.match(spec, "^%s*([^,]-)%s*,%s*(%d+)%s*,%s*(%d+)%s*$")
+	if name then return name, w, h end
+	return string.match(spec, "^%s*(.-)%s*$"), nil, nil
+end
+
+function C.baseName(path)
+	return string.match(path, "([^/\\]+)$") or path
+end
+
+-- Texture from mod files (vanilla <IMAGECENTRE:media/ui/x.png>), or nil.
+local modTextureCache = {}
+function C.modTexture(path)
+	local cached = modTextureCache[path]
+	if cached == nil then
+		cached = getTexture(path) or false
+		modTextureCache[path] = cached
+	end
+	return cached or nil
+end
+
+local function askImage(name)
+	if not DelNews.isValidImageName(name) then return end
+	local img = C.images[name]
+	-- Re-ask every time the document arrives: the picture may have been
+	-- uploaded or replaced since.
+	if not img or img.state == "missing" or img.state == "failed" or img.state == "ready" then
+		C.images[name] = C.images[name] or {}
+		C.images[name].state = C.images[name].state or "asked"
+		send("img", { name = name })
+	end
+end
+
 local function requestImages()
 	if not C.doc or not C.doc.tabs then return end
 	for _, tab in ipairs(C.doc.tabs) do
 		for _, line in ipairs(tab.lines) do
-			for name in string.gmatch(line, "<IMG:%s*([^>,%s]+)") do
-				if DelNews.isValidImageName(name) then
-					local img = C.images[name]
-					-- Re-ask every time the document arrives: the picture may have
-					-- been uploaded or replaced since.
-					if not img or img.state == "missing" or img.state == "failed" or img.state == "ready" then
-						C.images[name] = C.images[name] or {}
-						C.images[name].state = C.images[name].state or "asked"
-						send("img", { name = name })
-					end
+			for spec in string.gmatch(line, "<IMG:([^>]+)>") do
+				askImage((C.parseImageSpec(spec)))
+			end
+			-- SSR-style tags: only pictures that no mod provides come from the server.
+			for _, tag in ipairs({ "<IMAGECENTRE:([^>]+)>", "<IMAGE:([^>]+)>" }) do
+				for spec in string.gmatch(line, tag) do
+					local path = C.parseImageSpec(spec)
+					if not C.modTexture(path) then askImage(C.baseName(path)) end
 				end
 			end
 		end

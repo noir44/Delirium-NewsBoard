@@ -12,24 +12,32 @@ local UI = DelNewsUI
 
 DelNewsRichText = ISRichTextPanel:derive("DelNewsRichText")
 
--- <DNIMG:name> is what the UI turns <IMG:name> into once the picture is loaded.
--- Same placement as vanilla IMAGECENTRE, but the texture comes from our table
--- (no file path inside the tag) and is scaled down to fit the panel width.
+-- Textures found in mod files, by the path written in the news file.
+local modTextures = {}
+
+-- <DNIMG:ref[,w,h]> is what buildText turns every picture tag into once the
+-- texture is known; ref is a server picture name or a mod file path. Same
+-- placement as vanilla IMAGECENTRE, but the texture comes from our tables (no
+-- file path for getTexture inside the tag, and never a nil texture: vanilla
+-- IMAGE/IMAGECENTRE call nil:getWidth() on a missing file and the whole tab
+-- fails to paginate) and it is scaled down to fit the panel width.
 function DelNewsRichText:processCommand(command, x, y, lineImageHeight, lineHeight)
 	if string.sub(command, 1, 6) ~= "DNIMG:" then
 		return ISRichTextPanel.processCommand(self, command, x, y, lineImageHeight, lineHeight)
 	end
-	local img = DelNewsClient.images[string.sub(command, 7)]
-	local tex = img and img.tex
+	local spec = string.sub(command, 7)
+	local ref, sw, sh = string.match(spec, "^([^,]+),%s*(%d+),%s*(%d+)$")
+	if not ref then ref = spec end
+	local img = DelNewsClient.images[ref]
+	local tex = modTextures[ref] or (img and img.tex)
 	if not tex then return x, y, lineImageHeight end
 
 	local maxW = self.width - self.marginLeft - self.marginRight - 20
-	local w, h = tex:getWidth(), tex:getHeight()
+	local w, h = tonumber(sw) or tex:getWidth(), tonumber(sh) or tex:getHeight()
 	if w > maxW then
 		h = math.floor(h * maxW / w)
 		w = maxW
 	end
-
 	if x + w >= self.width - (self.marginLeft + self.marginRight) then
 		x = 0
 		y = y + lineHeight
@@ -56,25 +64,56 @@ local function hexToRgb(r, g, b)
 	return string.format("<RGB:%.3f,%.3f,%.3f>", tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255)
 end
 
-local function imageTag(name)
-	local img = DelNewsClient.images[name]
-	if img and img.state == "ready" and img.tex then
-		return " <DNIMG:" .. name .. "> "
-	end
-	local key = "IGUI_DelNews_ImageLoading"
-	if img and img.state == "missing" then key = "IGUI_DelNews_ImageMissing"
-	elseif img and img.state == "failed" then key = "IGUI_DelNews_ImageFailed" end
+local function sizeSuffix(w, h)
+	if w and h then return "," .. w .. "," .. h end
+	return ""
+end
+
+local function placeholder(key, name)
 	return " <PUSHRGB:0.6,0.6,0.6> " .. getText(key, name) .. " <POPRGB> "
 end
 
+local function serverImageTag(name, w, h)
+	local img = DelNewsClient.images[name]
+	if img and img.state == "ready" and img.tex then
+		return " <DNIMG:" .. name .. sizeSuffix(w, h) .. "> "
+	end
+	local key = "IGUI_DelNews_ImageLoading"
+	if not DelNews.isValidImageName(name) or (img and img.state == "missing") then key = "IGUI_DelNews_ImageMissing"
+	elseif img and img.state == "failed" then key = "IGUI_DelNews_ImageFailed" end
+	return placeholder(key, name)
+end
+
+-- <IMG:name.png[,w,h]>: picture from the server folder.
+local function imgTag(spec)
+	local name, w, h = DelNewsClient.parseImageSpec(spec)
+	return serverImageTag(name, w, h)
+end
+
+-- Vanilla <IMAGE:path> / <IMAGECENTRE:path[,w,h]> (what SSR Newsboard files
+-- use): a picture inside a mod if one has it, otherwise the picture with the
+-- same file name from the server folder.
+local function modImageTag(spec)
+	local path, w, h = DelNewsClient.parseImageSpec(spec)
+	local tex = DelNewsClient.modTexture(path)
+	if tex then
+		modTextures[path] = tex
+		return " <DNIMG:" .. path .. sizeSuffix(w, h) .. "> "
+	end
+	return serverImageTag(DelNewsClient.baseName(path), w, h)
+end
+
 -- Tags understood on top of vanilla rich text (kept from SSR Newsboard files):
--- <IMG:file.png>, <HEX:rrggbb>, <LINK:text> (shown highlighted, not clickable).
+-- <IMG:file.png>, <HEX:rrggbb>, <LINK:text> (shown highlighted, not clickable),
+-- and a safe version of vanilla <IMAGE:>/<IMAGECENTRE:>.
 local function buildText(lines)
 	local out = {}
 	for _, line in ipairs(lines) do
 		line = string.gsub(line, "<HEX:(%x%x)(%x%x)(%x%x)>", hexToRgb)
 		line = string.gsub(line, "<LINK:([^>]+)>", " <PUSHRGB:0.31,0.69,0.96> %1 <POPRGB> ")
-		line = string.gsub(line, "<IMG:%s*([^>,%s]+)%s*>", imageTag)
+		line = string.gsub(line, "<IMG:([^>]+)>", imgTag)
+		line = string.gsub(line, "<IMAGECENTRE:([^>]+)>", modImageTag)
+		line = string.gsub(line, "<IMAGE:([^>]+)>", modImageTag)
 		out[#out + 1] = line
 	end
 	return table.concat(out, " <LINE> ")
@@ -181,7 +220,12 @@ function DelNewsPanel:showTab(resetScroll)
 	end
 	local scroll = self.text:getYScroll()
 	self.text:setText(text)
-	self.text:paginate()
+	-- Bad markup must not take the whole window down: show a note instead.
+	-- (pcall still prints the stack trace to the log, which is what we want here.)
+	if not pcall(function() self.text:paginate() end) then
+		self.text:setText(getText("IGUI_DelNews_BadMarkup"))
+		self.text:paginate()
+	end
 	if resetScroll then
 		self.text:setYScroll(0)
 	else
@@ -254,10 +298,10 @@ end
 function UI.open()
 	ensureUI()
 	UI.panel:resizeToScreen()
-	UI.panel:showTab(true)
 	UI.panel:setVisible(true)
 	UI.panel:bringToTop()
 	DelNewsClient.markRead()
+	UI.panel:showTab(true)
 end
 
 function UI.toggle()

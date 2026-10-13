@@ -197,6 +197,9 @@ local function stepEncoding()
 		log(string.format("picture ready: %s (%d bytes, %d chunks)", e.name, img.size, img.count))
 		for user, _ in pairs(img.waiters) do sendImageInfo(user, e.name) end
 		img.waiters = {}
+		-- A picture uploaded or replaced while the news text stayed the same:
+		-- clients that showed "not found" / the old version re-ask on "changed".
+		sendServerCommand(MOD, "changed", { docs = {} })
 	end
 end
 
@@ -267,6 +270,9 @@ local function pollDocs()
 			changed[#changed + 1] = docId
 		end
 	end
+	-- Also everything clients asked for: SSR-style <IMAGECENTRE:media/ui/x.png>
+	-- falls back to x.png here, and only the client knows when it needs that.
+	for name, _ in pairs(images) do referenced[name] = true end
 	checkImages(referenced)
 	return changed
 end
